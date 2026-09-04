@@ -39,6 +39,7 @@ interface ProjectsState {
     targetDurationSeconds: number;
     videoModel: string;
     scenes?: Scene[];
+    characters?: Character[];
   }) => Promise<string>;
   updateProjectStatus: (id: string, status: ProjectStatus) => Promise<void>;
   updateSceneStatus: (projectId: string, sceneId: string, status: SceneStatus) => Promise<void>;
@@ -106,6 +107,7 @@ function projectFromDoc(id: string, data: Record<string, unknown>): Project {
     createdAt: convertTimestamp(data.createdAt) ?? nowIso(),
     updatedAt: convertTimestamp(data.updatedAt) ?? nowIso(),
     idea: data.idea as string | undefined,
+    lastError: (data.lastError as string | undefined) ?? undefined,
   };
 }
 
@@ -119,6 +121,8 @@ function sceneFromDoc(id: string, data: Record<string, unknown>): Scene {
     videoUrl: data.videoUrl as string | undefined,
     audioUrl: data.audioUrl as string | undefined,
     durationSeconds: (data.durationSeconds as number) ?? 0,
+    dialogue: (data.dialogue as { speaker: string; line: string }[] | undefined) ?? undefined,
+    lastError: (data.lastError as string | undefined) ?? undefined,
   };
 }
 
@@ -226,14 +230,14 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
       targetDurationSeconds,
       videoModel,
       scenes,
+      characters,
     }) => {
       const user = useAuthStore.getState().user;
       if (!user) throw new Error('Not authenticated');
 
       const now = nowIso();
       const id = `proj-${Date.now()}`;
-      const status: ProjectStatus =
-        generationMode === 'single_story' ? 'breakdown_ready' : 'processing';
+      const status: ProjectStatus = 'draft';
 
       const initialScenes: Scene[] =
         scenes && scenes.length > 0
@@ -249,7 +253,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
         targetDurationSeconds,
         videoModel,
         status,
-        characters: [],
+        characters: characters ?? [],
         createdAt: now,
         updatedAt: now,
         idea,

@@ -2,7 +2,9 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createHash } from 'crypto';
 
-admin.initializeApp();
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
 
 const db = admin.firestore();
 const secretsManager = functions.runWith({
@@ -166,3 +168,5 @@ export const deleteApiKey = secretsManager.https.onCall(async (data, context) =>
 
   return { success: true, serviceId };
 });
+
+export * from './pipeline';

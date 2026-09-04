@@ -12,7 +12,10 @@ import { ChevronUp, ChevronDown } from 'lucide-react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
+import { VoicePicker } from '../components/VoicePicker';
 import { useProjectsStore } from '../store/projectsStore';
+import { functions } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { colors } from '../theme/colors';
 import type { RootStackParamList } from '../navigation/types';
 import type { Character, Scene } from '../types';
@@ -25,6 +28,11 @@ export function SceneBreakdownScreen() {
   const project = useProjectsStore((state) => state.getProjectById(projectId));
   const { approveBreakdown } = useProjectsStore();
 
+  const listVoicesCallable = httpsCallable(functions, 'listVoices');
+  const [voices, setVoices] = useState<{ id: string; name: string; previewUrl?: string }[]>([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
+  const [voicePickerIndex, setVoicePickerIndex] = useState<number | null>(null);
+
   const [localScenes, setLocalScenes] = useState<Scene[]>([]);
   const [localCharacters, setLocalCharacters] = useState<Character[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -35,6 +43,22 @@ export function SceneBreakdownScreen() {
       setLocalCharacters(project.characters.slice());
     }
   }, [project?.id, project?.scenes.length, project?.characters.length]);
+
+  useEffect(() => {
+    let mounted = true;
+    setIsLoadingVoices(true);
+    listVoicesCallable()
+      .then((res: any) => {
+        if (mounted) setVoices(res.data.voices ?? []);
+      })
+      .catch((err) => console.error('Failed to load voices:', err))
+      .finally(() => {
+        if (mounted) setIsLoadingVoices(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   if (!project) {
     return (
@@ -146,8 +170,21 @@ export function SceneBreakdownScreen() {
                 onChangeText={(text) => updateCharacterField(index, 'description', text)}
                 placeholder="Description (appearance, voice, role)"
                 placeholderTextColor={colors.textSecondary}
-                className="bg-background text-textPrimary font-body text-base px-4 py-2 rounded-lg border border-border"
+                className="bg-background text-textPrimary font-body text-base px-4 py-2 rounded-lg border border-border mb-2"
               />
+              <Pressable
+                onPress={() => setVoicePickerIndex(index)}
+                className="flex-row items-center justify-between bg-background px-4 py-2 rounded-lg border border-border"
+              >
+                <Text className="text-textPrimary font-body text-sm">
+                  {character.voiceId
+                    ? voices.find((v) => v.id === character.voiceId)?.name ?? 'Voice selected'
+                    : 'Select voice'}
+                </Text>
+                {isLoadingVoices && (
+                  <Text className="text-textSecondary font-body text-xs">Loading...</Text>
+                )}
+              </Pressable>
             </View>
           ))}
           <Pressable onPress={handleAddCharacter} className="self-start mt-1">
@@ -227,8 +264,26 @@ export function SceneBreakdownScreen() {
           title="Approve breakdown & generate"
           variant="primary"
           onPress={handleApprove}
-          disabled={localScenes.length === 0 || localScenes.some((scene) => !scene.script.trim()) || isSaving}
+          disabled={
+            localScenes.length === 0 ||
+            localScenes.some((scene) => !scene.script.trim()) ||
+            localCharacters.some((c) => !c.voiceId) ||
+            isSaving
+          }
         />
+
+        {voicePickerIndex !== null && (
+          <VoicePicker
+            visible={voicePickerIndex !== null}
+            voices={voices}
+            selectedId={localCharacters[voicePickerIndex]?.voiceId}
+            onSelect={(voiceId) => {
+              updateCharacterField(voicePickerIndex, 'voiceId', voiceId);
+              setVoicePickerIndex(null);
+            }}
+            onClose={() => setVoicePickerIndex(null)}
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );

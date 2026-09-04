@@ -65,6 +65,16 @@ const statusConfig: Record<StatusBadgeStatus, { label: string; containerClass: s
     containerClass: 'bg-accentViolet/20',
     textClass: 'text-accentViolet',
   },
+  video_generating: {
+    label: 'Video generating',
+    containerClass: 'bg-accentViolet/20',
+    textClass: 'text-accentViolet',
+  },
+  failed: {
+    label: 'Failed',
+    containerClass: 'bg-statusError/20',
+    textClass: 'text-statusError',
+  },
   rejected: {
     label: 'Rejected',
     containerClass: 'bg-statusError/20',

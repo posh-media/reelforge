@@ -13,7 +13,9 @@ export type SceneStatus =
   | 'video_ready'
   | 'lipsync_ready'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  | 'failed'
+  | 'video_generating';
 
 export type GenerationMode = 'single_story' | 'scene_by_scene';
 
@@ -34,6 +36,7 @@ export interface User {
 export interface Character {
   name: string;
   description: string;
+  voiceId?: string;
 }
 
 export interface Scene {
@@ -45,6 +48,8 @@ export interface Scene {
   videoUrl?: string;
   audioUrl?: string;
   durationSeconds: number;
+  dialogue?: { speaker: string; line: string }[];
+  lastError?: string;
 }
 
 export interface Project {
@@ -60,6 +65,7 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   idea?: string;
+  lastError?: string;
 }
 
 export interface ApiKeyEntry {

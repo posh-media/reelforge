@@ -7,17 +7,21 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
+import { VoicePicker } from '../components/VoicePicker';
 import { useProjectsStore } from '../store/projectsStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { functions } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { colors } from '../theme/colors';
 import type { MainTabParamList, RootStackParamList } from '../navigation/types';
-import type { GenerationMode, Scene } from '../types';
+import type { Character, GenerationMode, Scene } from '../types';
 
 const durationPresets = [
   { label: '1 min', seconds: 60 },
@@ -32,6 +36,7 @@ export function NewProjectScreen() {
     NativeStackNavigationProp<RootStackParamList>
   >>();
   const addProject = useProjectsStore((state) => state.addProject);
+  const approveBreakdown = useProjectsStore((state) => state.approveBreakdown);
   const videoModels = useSettingsStore((state) => state.videoModels);
   const isProviderConnected = useSettingsStore((state) => state.isProviderConnected);
 
@@ -44,9 +49,21 @@ export function NewProjectScreen() {
   const [targetDurationSeconds, setTargetDurationSeconds] = useState(300);
   const [customDuration, setCustomDuration] = useState('');
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
+  const [characterInput, setCharacterInput] = useState('');
   const [scenes, setScenes] = useState<Scene[]>([
     { id: 'new-scene-1', order: 1, script: '', status: 'pending', characterNames: [], durationSeconds: 0 },
   ]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+
+  const [voiceModalVisible, setVoiceModalVisible] = useState(false);
+  const [voiceModalProjectId, setVoiceModalProjectId] = useState<string | null>(null);
+  const [voiceModalCharacters, setVoiceModalCharacters] = useState<Character[]>([]);
+  const [voices, setVoices] = useState<{ id: string; name: string; previewUrl?: string }[]>([]);
+  const [voicePickerIndex, setVoicePickerIndex] = useState<number | null>(null);
+
+  const generateBreakdownCallable = httpsCallable(functions, 'generateBreakdown');
+  const listVoicesCallable = httpsCallable(functions, 'listVoices');
 
   const selectedModel = videoModels.find((model) => model.id === selectedVideoModel);
   const selectedProvider = selectedModel
@@ -99,30 +116,57 @@ export function NewProjectScreen() {
     );
   };
 
+  const parsedCharacters = (): Character[] =>
+    characterInput
+      .split(/[,\n]+/)
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0)
+      .map((c) => ({ name: c, description: '' }));
+
   const canGenerate = () => {
     if (!selectedVideoModel) return false;
     if (!modelConnected) return false;
+    if (isGenerating) return false;
     if (generationMode === 'single_story') {
       return idea.trim().length > 0;
     }
-    return scenes.length > 0 && scenes.every((scene) => scene.script.trim().length > 0);
+    return (
+      scenes.length > 0 &&
+      scenes.every((scene) => scene.script.trim().length > 0) &&
+      parsedCharacters().length > 0
+    );
   };
 
   const handleGenerate = async () => {
+    setBreakdownError(null);
+    setIsGenerating(true);
     const derivedTitle = title.trim() || idea.split(/[.!?]/)[0].trim() || 'Untitled Project';
-    const newProjectId = await addProject({
-      title: derivedTitle,
-      genre: selectedGenre ?? undefined,
-      idea,
-      generationMode,
-      targetDurationSeconds,
-      videoModel: selectedVideoModel!,
-      scenes: generationMode === 'scene_by_scene' ? scenes : undefined,
-    });
-    if (generationMode === 'single_story') {
-      navigation.navigate('SceneBreakdown', { projectId: newProjectId });
-    } else {
-      navigation.navigate('MainTabs' as never);
+    try {
+      const newProjectId = await addProject({
+        title: derivedTitle,
+        genre: selectedGenre ?? undefined,
+        idea,
+        generationMode,
+        targetDurationSeconds,
+        videoModel: selectedVideoModel!,
+        scenes: generationMode === 'scene_by_scene' ? scenes : undefined,
+        characters: generationMode === 'scene_by_scene' ? parsedCharacters() : undefined,
+      });
+
+      if (generationMode === 'single_story') {
+        await generateBreakdownCallable({ projectId: newProjectId });
+        navigation.navigate('SceneBreakdown', { projectId: newProjectId });
+      } else {
+        const res = await listVoicesCallable();
+        setVoices((res.data as any).voices ?? []);
+        setVoiceModalProjectId(newProjectId);
+        setVoiceModalCharacters(parsedCharacters());
+        setVoiceModalVisible(true);
+      }
+    } catch (err) {
+      setBreakdownError(err instanceof Error ? err.message : 'Failed to start generation.');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -231,6 +275,25 @@ export function NewProjectScreen() {
             </View>
           )}
 
+          {generationMode === 'scene_by_scene' && (
+            <View className="mb-6">
+              <Text className="text-textSecondary font-body text-sm mb-2">Characters in this story</Text>
+              <TextInput
+                value={characterInput}
+                onChangeText={setCharacterInput}
+                placeholder="Daniel, Kira, The Forest"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                className="bg-surface text-textPrimary font-body text-base px-4 py-3 rounded-lg border border-border"
+              />
+              <Text className="text-textSecondary font-body text-xs mt-2">
+                Separate character names with commas or new lines.
+              </Text>
+            </View>
+          )}
+
           <View className="mb-6">
             <Text className="text-textSecondary font-body text-sm mb-2">Target duration</Text>
             <View className="flex-row flex-wrap mb-3">
@@ -322,13 +385,86 @@ export function NewProjectScreen() {
           </View>
 
           <Button
-            title="Generate"
+            title={isGenerating ? 'Generating...' : 'Generate'}
             variant="secondary"
             onPress={handleGenerate}
             disabled={!canGenerate()}
           />
+
+          {breakdownError && (
+            <Text className="text-statusError font-body text-sm mt-3 text-center">{breakdownError}</Text>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={voiceModalVisible}
+        onRequestClose={() => {}}
+      >
+        <View className="flex-1 bg-background p-6 pt-16">
+          <Text className="text-textPrimary font-display text-2xl mb-4">
+            Assign character voices
+          </Text>
+          <Text className="text-textSecondary font-body text-sm mb-6">
+            Pick an ElevenLabs voice for each character before generating.
+          </Text>
+
+          <ScrollView className="flex-1">
+            {voiceModalCharacters.map((character, index) => (
+              <View key={index} className="bg-surface rounded-xl p-4 mb-4 border border-border/30">
+                <Text className="text-textPrimary font-body-semibold text-base mb-2">{character.name}</Text>
+                <Pressable
+                  onPress={() => setVoicePickerIndex(index)}
+                  className="flex-row items-center justify-between bg-background px-4 py-3 rounded-lg border border-border"
+                >
+                  <Text className="text-textPrimary font-body text-sm">
+                    {character.voiceId
+                      ? voices.find((v) => v.id === character.voiceId)?.name ?? 'Voice selected'
+                      : 'Select voice'}
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+
+          <Button
+            title="Approve and generate"
+            onPress={async () => {
+              const pid = voiceModalProjectId;
+              if (!pid) return;
+              try {
+                await approveBreakdown(pid, voiceModalCharacters, [
+                  ...scenes,
+                ]);
+                setVoiceModalVisible(false);
+                setVoiceModalProjectId(null);
+                navigation.navigate('ProjectDetail' as any, { projectId: pid } as any);
+              } catch (err) {
+                setBreakdownError(err instanceof Error ? err.message : 'Failed to start generation.');
+              }
+            }}
+            variant="primary"
+            disabled={voiceModalCharacters.some((c) => !c.voiceId)}
+          />
+        </View>
+      </Modal>
+
+      {voicePickerIndex !== null && (
+        <VoicePicker
+          visible={voicePickerIndex !== null}
+          voices={voices}
+          selectedId={voiceModalCharacters[voicePickerIndex]?.voiceId}
+          onSelect={(voiceId) => {
+            const updated = [...voiceModalCharacters];
+            updated[voicePickerIndex] = { ...updated[voicePickerIndex], voiceId };
+            setVoiceModalCharacters(updated);
+            setVoicePickerIndex(null);
+          }}
+          onClose={() => setVoicePickerIndex(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }

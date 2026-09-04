@@ -9,6 +9,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Play, Download } from 'lucide-react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../services/firebase';
 import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBadge } from '../components/StatusBadge';
 import { PipelineTracker } from '../components/PipelineTracker';
@@ -62,9 +64,14 @@ function SceneCard({
       <Text className="text-textPrimary font-body text-base leading-6 mb-4">
         {scene.script}
       </Text>
-      <Text className="text-textSecondary font-body text-xs mb-4">
+      <Text className="text-textSecondary font-body text-xs mb-2">
         Duration: {scene.durationSeconds}s · Characters: {scene.characterNames.join(', ') || 'TBD'}
       </Text>
+      {scene.status === 'failed' && scene.lastError && (
+        <Text className="text-statusError font-body text-xs mb-4">
+          Error: {scene.lastError}
+        </Text>
+      )}
       {!readOnly && (
         <View className="flex-row flex-wrap">
           <View className="mr-2 mb-2">
@@ -130,6 +137,8 @@ export function ProjectDetailScreen() {
     updateProjectStatus,
   } = useProjectsStore();
 
+  const regenerateSceneCallable = httpsCallable(functions, 'regenerateScene');
+
   const [finalRejectModalVisible, setFinalRejectModalVisible] = useState(false);
 
   if (!project) {
@@ -152,7 +161,11 @@ export function ProjectDetailScreen() {
   };
 
   const handleSceneRegenerate = async (sceneId: string) => {
-    await updateSceneStatus(projectId, sceneId, 'script_ready');
+    try {
+      await regenerateSceneCallable({ projectId, sceneId });
+    } catch (err) {
+      console.error('Regenerate failed:', err);
+    }
   };
 
   const handleApproveAll = async () => {
