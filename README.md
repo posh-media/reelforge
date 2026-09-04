@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Reelforge — Phase 1
 
 Reelforge is a React Native + Expo app for automating AI-narrated short-story videos for YouTube. **Phase 1 covers the foundation only**: project scaffolding, design system, UI screens, and local mock data. No real backend, AI, or upload integrations are wired yet.
