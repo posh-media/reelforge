@@ -7,7 +7,7 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyRound, Play } from 'lucide-react-native';
+import { KeyRound, Play, Trash2 } from 'lucide-react-native';
 import { useSettingsStore } from '../store/settingsStore';
 import { Button } from '../components/Button';
 import { colors } from '../theme/colors';
@@ -22,17 +22,38 @@ const serviceInfo = [
 function ServiceRow({
   id,
   name,
-  value,
   isConnected,
   onSave,
+  onDelete,
 }: {
   id: string;
   name: string;
-  value: string;
   isConnected: boolean;
   onSave: (key: string) => void;
+  onDelete: () => void;
 }) {
-  const [input, setInput] = useState(value);
+  const [input, setInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(input);
+      setInput('');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsSaving(true);
+    try {
+      await onDelete();
+      setInput('');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <View className="bg-surface rounded-xl p-4 mb-4 border border-border/30">
@@ -57,12 +78,29 @@ function ServiceRow({
       <TextInput
         value={input}
         onChangeText={setInput}
-        placeholder="••••••••••••"
+        placeholder={isConnected ? 'Enter new key to rotate' : '••••••••••••'}
         placeholderTextColor={colors.textSecondary}
         secureTextEntry
         className="bg-background text-textPrimary font-body text-base px-4 py-3 rounded-lg border border-border mb-3"
       />
-      <Button title="Save" onPress={() => onSave(input)} variant="primary" />
+      <View className="flex-row">
+        <View className="flex-1 mr-3">
+          <Button
+            title={isConnected ? 'Rotate key' : 'Save'}
+            onPress={handleSave}
+            variant="primary"
+            disabled={!input.trim() || isSaving}
+          />
+        </View>
+        {isConnected && (
+          <Button
+            title="Disconnect"
+            onPress={handleDelete}
+            variant="danger"
+            disabled={isSaving}
+          />
+        )}
+      </View>
     </View>
   );
 }
@@ -71,13 +109,36 @@ function VideoProviderRow({
   provider,
   apiKeyEntry,
   onSave,
+  onDelete,
 }: {
   provider: { id: string; name: string };
   apiKeyEntry?: ApiKeyEntry;
   onSave: (key: string) => void;
+  onDelete: () => void;
 }) {
-  const [input, setInput] = useState(apiKeyEntry?.key ?? '');
+  const [input, setInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const isConnected = apiKeyEntry?.isConnected ?? false;
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(input);
+      setInput('');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsSaving(true);
+    try {
+      await onDelete();
+      setInput('');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <View className="bg-surface rounded-xl p-4 mb-4 border border-border/30">
@@ -105,18 +166,35 @@ function VideoProviderRow({
       <TextInput
         value={input}
         onChangeText={setInput}
-        placeholder="••••••••••••"
+        placeholder={isConnected ? 'Enter new key to rotate' : '••••••••••••'}
         placeholderTextColor={colors.textSecondary}
         secureTextEntry
         className="bg-background text-textPrimary font-body text-base px-4 py-3 rounded-lg border border-border mb-3"
       />
-      <Button title="Save" onPress={() => onSave(input)} variant="primary" />
+      <View className="flex-row">
+        <View className="flex-1 mr-3">
+          <Button
+            title={isConnected ? 'Rotate key' : 'Save'}
+            onPress={handleSave}
+            variant="primary"
+            disabled={!input.trim() || isSaving}
+          />
+        </View>
+        {isConnected && (
+          <Button
+            title="Disconnect"
+            onPress={handleDelete}
+            variant="danger"
+            disabled={isSaving}
+          />
+        )}
+      </View>
     </View>
   );
 }
 
 export function SettingsScreen() {
-  const { apiKeys, videoProviders, updateKey } = useSettingsStore();
+  const { apiKeys, videoProviders, saveApiKey, deleteApiKey } = useSettingsStore();
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'left', 'right']}>
@@ -133,9 +211,9 @@ export function SettingsScreen() {
               key={service.id}
               id={service.id}
               name={service.name}
-              value={entry?.key ?? ''}
               isConnected={entry?.isConnected ?? false}
-              onSave={(key) => updateKey(service.id, key)}
+              onSave={(key) => saveApiKey(service.id, key)}
+              onDelete={() => deleteApiKey(service.id)}
             />
           );
         })}
@@ -148,7 +226,8 @@ export function SettingsScreen() {
               key={provider.id}
               provider={provider}
               apiKeyEntry={entry}
-              onSave={(key) => updateKey(provider.apiKeyServiceId, key)}
+              onSave={(key) => saveApiKey(provider.apiKeyServiceId, key)}
+              onDelete={() => deleteApiKey(provider.apiKeyServiceId)}
             />
           );
         })}
@@ -167,7 +246,7 @@ export function SettingsScreen() {
         </View>
 
         <Text className="text-textSecondary font-body text-sm text-center mt-2">
-          Keys are encrypted and stored securely — never stored on this device.
+          Keys are encrypted and stored securely via Google Cloud Secret Manager — never stored on this device or in Firestore.
         </Text>
       </ScrollView>
     </SafeAreaView>

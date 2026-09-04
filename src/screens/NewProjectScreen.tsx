@@ -100,7 +100,6 @@ export function NewProjectScreen() {
   };
 
   const canGenerate = () => {
-    if (!title.trim()) return false;
     if (!selectedVideoModel) return false;
     if (!modelConnected) return false;
     if (generationMode === 'single_story') {
@@ -109,9 +108,9 @@ export function NewProjectScreen() {
     return scenes.length > 0 && scenes.every((scene) => scene.script.trim().length > 0);
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     const derivedTitle = title.trim() || idea.split(/[.!?]/)[0].trim() || 'Untitled Project';
-    const newProjectId = addProject({
+    const newProjectId = await addProject({
       title: derivedTitle,
       genre: selectedGenre ?? undefined,
       idea,
@@ -123,7 +122,7 @@ export function NewProjectScreen() {
     if (generationMode === 'single_story') {
       navigation.navigate('SceneBreakdown', { projectId: newProjectId });
     } else {
-      navigation.navigate('Dashboard');
+      navigation.navigate('MainTabs' as never);
     }
   };
 

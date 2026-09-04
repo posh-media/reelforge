@@ -15,17 +15,57 @@ import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme/colors';
 
 export function LoginScreen() {
-  const login = useAuthStore((state) => state.login);
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleSignIn = () => {
-    login();
+  const displayedError = localError || error;
+
+  const handleEmailSubmit = async () => {
+    clearError();
+    setLocalError(null);
+    setIsSubmitting(true);
+    try {
+      if (isSignUp) {
+        await signUpWithEmail(email, password);
+      } else {
+        await signInWithEmail(email, password);
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        setLocalError(err.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleGoogleSignIn = () => {
-    console.log('Google sign-in tapped (Phase 1 placeholder)');
-    login();
+  const handleGoogleSignIn = async () => {
+    clearError();
+    setLocalError(null);
+    if (Platform.OS !== 'web') {
+      setLocalError('Google sign-in is available on the web in this build.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      if (err instanceof Error) {
+        setLocalError(err.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setIsSignUp((prev) => !prev);
+    clearError();
+    setLocalError(null);
   };
 
   return (
@@ -46,11 +86,23 @@ export function LoginScreen() {
           </View>
 
           <View className="max-w-md w-full self-center">
+            {displayedError && (
+              <View className="bg-statusError/20 border border-statusError/50 rounded-lg p-3 mb-4">
+                <Text className="text-statusError font-body text-sm text-center">
+                  {displayedError}
+                </Text>
+              </View>
+            )}
+
             <View className="mb-4">
               <Text className="text-textSecondary font-body text-sm mb-2">Email</Text>
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  clearError();
+                  setLocalError(null);
+                }}
                 placeholder="you@studio.com"
                 placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
@@ -63,7 +115,11 @@ export function LoginScreen() {
               <Text className="text-textSecondary font-body text-sm mb-2">Password</Text>
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  clearError();
+                  setLocalError(null);
+                }}
                 placeholder="••••••••"
                 placeholderTextColor={colors.textSecondary}
                 secureTextEntry
@@ -72,8 +128,21 @@ export function LoginScreen() {
             </View>
 
             <View className="pt-2">
-              <Button title="Sign in" onPress={handleSignIn} variant="primary" />
+              <Button
+                title={isSignUp ? 'Create account' : 'Sign in'}
+                onPress={handleEmailSubmit}
+                variant="primary"
+                disabled={isSubmitting}
+              />
             </View>
+
+            <Pressable onPress={toggleMode} className="mt-4 self-center">
+              <Text className="text-textSecondary font-body text-sm">
+                {isSignUp
+                  ? 'Already have an account? Sign in'
+                  : "Don't have an account? Sign up"}
+              </Text>
+            </Pressable>
 
             <View className="flex-row items-center my-6">
               <View className="flex-1 h-px bg-border" />
@@ -83,6 +152,7 @@ export function LoginScreen() {
 
             <Pressable
               onPress={handleGoogleSignIn}
+              disabled={isSubmitting}
               className="flex-row items-center justify-center border border-border bg-surface rounded-lg px-4 py-3"
               style={({ pressed }) => ({
                 opacity: pressed ? 0.8 : 1,

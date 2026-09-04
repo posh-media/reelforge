@@ -34,6 +34,10 @@ yarn-error.*
 .env
 .env*.local
 
+# native Firebase configuration (contains API keys)
+google-services.json
+GoogleService-Info.plist
+
 # typescript
 *.tsbuildinfo
 
@@ -44,3 +48,15 @@ yarn-error.*
 # generated assets
 screenshots/
 *.zip
+
+# Firebase emulator / build artifacts
+functions/lib
+firestore-debug.log
+ui-debug.log
+*.log
+start-emulators.ps1
+serve-dist.js
+scripts/e2e-live-key.js
+scripts/verify-live-app.js
+scripts/verify-live-key-ui.js
+scripts/verify-settings.js

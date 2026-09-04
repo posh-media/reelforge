@@ -32,7 +32,11 @@ const linking = {
 };
 
 export function RootNavigator() {
-  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const { user, isLoading } = useAuthStore();
+
+  if (isLoading) {
+    return null;
+  }
 
   return (
     <NavigationContainer linking={linking}>
@@ -44,7 +48,7 @@ export function RootNavigator() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        {!isLoggedIn ? (
+        {!user ? (
           <Stack.Screen
             name="Login"
             component={LoginScreen}

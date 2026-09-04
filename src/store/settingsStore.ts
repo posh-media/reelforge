@@ -1,47 +1,111 @@
 import { create } from 'zustand';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../services/firebase';
+import { useAuthStore } from './authStore';
 import type { ApiKeyEntry, VideoProvider, VideoModel } from '../types';
 
 interface SettingsState {
   apiKeys: ApiKeyEntry[];
   videoProviders: VideoProvider[];
   videoModels: VideoModel[];
-  updateKey: (serviceId: string, key: string) => void;
+  isLoading: boolean;
   isProviderConnected: (providerId: string) => boolean;
+  saveApiKey: (serviceId: string, key: string) => Promise<void>;
+  deleteApiKey: (serviceId: string) => Promise<void>;
 }
 
-const initialKeys: ApiKeyEntry[] = [
-  { serviceId: 'anthropic', serviceName: 'Anthropic (Claude)', key: '', isConnected: false },
-  { serviceId: 'elevenlabs', serviceName: 'ElevenLabs', key: '', isConnected: false },
-  { serviceId: 'falai', serviceName: 'fal.ai', key: '', isConnected: false },
-  { serviceId: 'synclabs', serviceName: 'Sync Labs', key: '', isConnected: false },
-];
-
-const initialVideoProviders: VideoProvider[] = [
+const VIDEO_PROVIDERS: VideoProvider[] = [
   { id: 'falai', name: 'fal.ai', apiKeyServiceId: 'falai' },
 ];
 
-const initialVideoModels: VideoModel[] = [
+const VIDEO_MODELS: VideoModel[] = [
   { id: 'seedance', name: 'Seedance (via fal.ai)', providerId: 'falai' },
   { id: 'kling', name: 'Kling (via fal.ai)', providerId: 'falai' },
   { id: 'veo', name: 'Veo (via fal.ai)', providerId: 'falai' },
 ];
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
-  apiKeys: initialKeys,
-  videoProviders: initialVideoProviders,
-  videoModels: initialVideoModels,
-  updateKey: (serviceId, key) =>
-    set((state) => ({
-      apiKeys: state.apiKeys.map((entry) =>
-        entry.serviceId === serviceId
-          ? { ...entry, key, isConnected: key.trim().length > 0 }
-          : entry
-      ),
-    })),
-  isProviderConnected: (providerId) => {
-    const provider = get().videoProviders.find((p) => p.id === providerId);
-    if (!provider) return false;
-    const entry = get().apiKeys.find((k) => k.serviceId === provider.apiKeyServiceId);
-    return entry?.isConnected ?? false;
-  },
-}));
+const SERVICE_NAMES: Record<string, string> = {
+  anthropic: 'Anthropic (Claude)',
+  elevenlabs: 'ElevenLabs',
+  falai: 'fal.ai',
+  synclabs: 'Sync Labs',
+};
+
+const saveApiKeyCallable = httpsCallable(functions, 'saveApiKey');
+const deleteApiKeyCallable = httpsCallable(functions, 'deleteApiKey');
+
+export const useSettingsStore = create<SettingsState>((set, get) => {
+  let unsubscribe: (() => void) | null = null;
+
+  const subscribeToApiKeys = (userId: string) => {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+    set({ apiKeys: [], isLoading: true });
+
+    const apiKeysRef = collection(db, 'users', userId, 'apiKeys');
+    unsubscribe = onSnapshot(
+      apiKeysRef,
+      (snapshot) => {
+        const apiKeys: ApiKeyEntry[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          apiKeys.push({
+            serviceId: docSnap.id,
+            serviceName: (data.serviceName as string) ?? SERVICE_NAMES[docSnap.id] ?? docSnap.id,
+            key: '', // The raw key is never stored on the client.
+            isConnected: (data.connected as boolean) ?? false,
+          });
+        });
+        set({ apiKeys, isLoading: false });
+      },
+      (err) => {
+        console.error('ApiKeys subscription error:', err);
+        set({ isLoading: false });
+      }
+    );
+  };
+
+  const unsubscribeFromApiKeys = () => {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+    set({ apiKeys: [], isLoading: false });
+  };
+
+  useAuthStore.subscribe(
+    (state) => state.user,
+    (user) => {
+      if (user) {
+        subscribeToApiKeys(user.uid);
+      } else {
+        unsubscribeFromApiKeys();
+      }
+    }
+  );
+
+  return {
+    apiKeys: [],
+    videoProviders: VIDEO_PROVIDERS,
+    videoModels: VIDEO_MODELS,
+    isLoading: false,
+
+    isProviderConnected: (providerId) => {
+      const provider = get().videoProviders.find((p) => p.id === providerId);
+      if (!provider) return false;
+      const entry = get().apiKeys.find((k) => k.serviceId === provider.apiKeyServiceId);
+      return entry?.isConnected ?? false;
+    },
+
+    saveApiKey: async (serviceId, key) => {
+      await saveApiKeyCallable({ serviceId, key });
+    },
+
+    deleteApiKey: async (serviceId) => {
+      await deleteApiKeyCallable({ serviceId });
+    },
+  };
+});

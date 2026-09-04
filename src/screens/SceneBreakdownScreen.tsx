@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
   ScrollView,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronUp, ChevronDown } from 'lucide-react-native';
@@ -22,48 +23,35 @@ export function SceneBreakdownScreen() {
   const projectId = route.params.projectId;
 
   const project = useProjectsStore((state) => state.getProjectById(projectId));
-  const {
-    updateSceneScript,
-    updateSceneDuration,
-    reorderScenes,
-    addScene,
-    removeScene,
-    updateCharacter,
-    addCharacter,
-    removeCharacter,
-    approveBreakdown,
-  } = useProjectsStore();
+  const { approveBreakdown } = useProjectsStore();
 
-  const [localScenes, setLocalScenes] = useState<Scene[]>(project?.scenes ?? []);
-  const [localCharacters, setLocalCharacters] = useState<Character[]>(project?.characters ?? []);
+  const [localScenes, setLocalScenes] = useState<Scene[]>([]);
+  const [localCharacters, setLocalCharacters] = useState<Character[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (project) {
+      setLocalScenes(project.scenes.slice().sort((a, b) => a.order - b.order));
+      setLocalCharacters(project.characters.slice());
+    }
+  }, [project?.id, project?.scenes.length, project?.characters.length]);
 
   if (!project) {
     return (
       <SafeAreaView className="flex-1 bg-background items-center justify-center">
-        <Text className="text-textSecondary font-body">Project not found.</Text>
+        <ActivityIndicator color={colors.accentViolet} />
+        <Text className="text-textSecondary font-body mt-4">Loading breakdown...</Text>
       </SafeAreaView>
     );
   }
 
-  const syncScenes = (updater: (scenes: Scene[]) => Scene[]) => {
-    const next = updater(localScenes);
-    setLocalScenes(next);
-    next.forEach((scene) => {
-      updateSceneScript(projectId, scene.id, scene.script);
-      updateSceneDuration(projectId, scene.id, scene.durationSeconds);
-    });
-  };
-
   const updateSceneField = (index: number, field: keyof Scene, value: string | number) => {
-    const next = localScenes.map((scene, i) => (i === index ? { ...scene, [field]: value } : scene));
-    setLocalScenes(next);
-    const scene = next[index];
-    updateSceneScript(projectId, scene.id, scene.script);
-    updateSceneDuration(projectId, scene.id, scene.durationSeconds);
+    setLocalScenes((prev) =>
+      prev.map((scene, i) => (i === index ? { ...scene, [field]: value } : scene))
+    );
   };
 
   const handleReorder = (sceneId: string, direction: 'up' | 'down') => {
-    reorderScenes(projectId, sceneId, direction);
     setLocalScenes((prev) => {
       const next = [...prev];
       const index = next.findIndex((s) => s.id === sceneId);
@@ -78,36 +66,52 @@ export function SceneBreakdownScreen() {
   };
 
   const handleAddScene = () => {
-    addScene(projectId, localScenes.length);
-    const storeProject = useProjectsStore.getState().getProjectById(projectId);
-    if (storeProject) setLocalScenes(storeProject.scenes);
+    setLocalScenes((prev) => {
+      const order = prev.length + 1;
+      return [
+        ...prev,
+        {
+          id: `scene-${Date.now()}-${order}`,
+          order,
+          script: '',
+          status: 'pending',
+          characterNames: [],
+          durationSeconds: 0,
+        },
+      ];
+    });
   };
 
   const handleRemoveScene = (sceneId: string) => {
-    removeScene(projectId, sceneId);
-    setLocalScenes((prev) => prev.filter((s) => s.id !== sceneId));
+    setLocalScenes((prev) =>
+      prev
+        .filter((s) => s.id !== sceneId)
+        .map((scene, i) => ({ ...scene, order: i + 1 }))
+    );
   };
 
   const updateCharacterField = (index: number, field: keyof Character, value: string) => {
-    const next = localCharacters.map((char, i) => (i === index ? { ...char, [field]: value } : char));
-    setLocalCharacters(next);
-    updateCharacter(projectId, index, next[index]);
+    setLocalCharacters((prev) =>
+      prev.map((char, i) => (i === index ? { ...char, [field]: value } : char))
+    );
   };
 
   const handleAddCharacter = () => {
-    const character: Character = { name: '', description: '' };
-    addCharacter(projectId, character);
-    setLocalCharacters((prev) => [...prev, character]);
+    setLocalCharacters((prev) => [...prev, { name: '', description: '' }]);
   };
 
   const handleRemoveCharacter = (index: number) => {
-    removeCharacter(projectId, index);
     setLocalCharacters((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleApprove = () => {
-    approveBreakdown(projectId);
-    navigation.navigate('MainTabs');
+  const handleApprove = async () => {
+    setIsSaving(true);
+    try {
+      await approveBreakdown(projectId, localCharacters, localScenes);
+      navigation.navigate('MainTabs' as never);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const totalDuration = localScenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
@@ -154,7 +158,7 @@ export function SceneBreakdownScreen() {
         <View className="mb-2 flex-row justify-between items-center">
           <Text className="text-textPrimary font-body-semibold text-sm">Scenes</Text>
           <Text className="text-textSecondary font-body text-xs">
-            Current total: {Math.round(totalDuration / 60 * 10) / 10} min
+            Current total: {Math.round((totalDuration / 60) * 10) / 10} min
           </Text>
         </View>
 
@@ -223,7 +227,7 @@ export function SceneBreakdownScreen() {
           title="Approve breakdown & generate"
           variant="primary"
           onPress={handleApprove}
-          disabled={localScenes.length === 0 || localScenes.some((scene) => !scene.script.trim())}
+          disabled={localScenes.length === 0 || localScenes.some((scene) => !scene.script.trim()) || isSaving}
         />
       </ScrollView>
     </SafeAreaView>

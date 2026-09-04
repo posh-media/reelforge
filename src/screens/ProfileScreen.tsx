@@ -4,11 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { User } from 'lucide-react-native';
 import { Button } from '../components/Button';
 import { useAuthStore } from '../store/authStore';
-import { mockUser } from '../mocks/data';
 import { colors } from '../theme/colors';
 
 export function ProfileScreen() {
-  const logout = useAuthStore((state) => state.logout);
+  const { user, logout } = useAuthStore();
+
+  const displayName = user?.displayName ?? 'Reelforge user';
+  const email = user?.email ?? '';
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'left', 'right']}>
@@ -17,8 +19,12 @@ export function ProfileScreen() {
           <User size={48} color={colors.textSecondary} />
         </View>
 
-        <Text className="text-textPrimary font-display text-2xl mb-1">{mockUser.name}</Text>
-        <Text className="text-textSecondary font-body text-base mb-10">{mockUser.email}</Text>
+        <Text className="text-textPrimary font-display text-2xl mb-1" numberOfLines={1}>
+          {displayName}
+        </Text>
+        <Text className="text-textSecondary font-body text-base mb-10" numberOfLines={1}>
+          {email}
+        </Text>
 
         <Button title="Log out" onPress={logout} variant="danger" />
       </View>

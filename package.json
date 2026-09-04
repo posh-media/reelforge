@@ -17,6 +17,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-dotenv": "^4.1.1",
     "react-native-safe-area-context": "^5.9.1",
     "react-native-screens": "^4.27.0",
     "react-native-svg": "^15.15.5",
@@ -25,15 +26,21 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@types/node": "^26.4.1",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "^57.0.10",
+    "playwright": "^1.62.1",
+    "ts-node": "^10.9.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "emulators:start": "firebase emulators:start",
+    "test:rules": "firebase emulators:exec --only firestore \"npx ts-node --project firestore-rules-tests/tsconfig.json firestore-rules-tests/index.test.ts\""
   },
   "private": true
 }

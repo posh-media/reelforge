@@ -2,7 +2,7 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'http://localhost:8083';
+const BASE_URL = 'http://localhost:3001';
 const OUT_DIR = path.join(__dirname, '..', 'screenshots');
 
 async function sleep(ms) {
@@ -15,17 +15,30 @@ async function screenshot(page, name, viewport) {
   console.log('Screenshot:', name);
 }
 
+async function signUp(page) {
+  const email = `devin-screenshot-${Date.now()}@reelforge.studio`;
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await sleep(2000);
+  await page.getByText('Sign up').first().click();
+  await sleep(500);
+  const inputs = page.locator('input');
+  await inputs.nth(0).fill(email);
+  await inputs.nth(1).fill('ReelforgeScreenshot123!');
+  await page.getByText('Create account').first().click();
+  await sleep(5000);
+  await page.waitForSelector('text=/Clockmaker/', { timeout: 15000 });
+}
+
 async function captureScreens(browser) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
 
-  await page.goto(BASE_URL);
-  await sleep(1500);
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await sleep(2000);
   await screenshot(page, '01-login-web.png', { width: 1280, height: 800 });
   await screenshot(page, '01-login-mobile.png', { width: 390, height: 844, deviceScaleFactor: 2 });
 
-  await page.click('text=Sign in');
-  await sleep(1000);
+  await signUp(page);
   await screenshot(page, '02-dashboard-web.png', { width: 1280, height: 900 });
   await screenshot(page, '02-dashboard-mobile.png', { width: 390, height: 844, deviceScaleFactor: 2 });
 

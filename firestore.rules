@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function noRawSecret() {
+      return !('secret' in request.resource.data);
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /projects/{projectId} {
+        allow read, write: if isOwner(userId);
+
+        match /scenes/{sceneId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+
+      match /apiKeys/{serviceId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && noRawSecret();
+        allow delete: if isOwner(userId);
+      }
+
+      match /videoProviders/{providerId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId) && noRawSecret();
+      }
+    }
+  }
+}

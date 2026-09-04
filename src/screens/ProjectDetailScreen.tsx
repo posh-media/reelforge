@@ -14,7 +14,6 @@ import { StatusBadge } from '../components/StatusBadge';
 import { PipelineTracker } from '../components/PipelineTracker';
 import { Button } from '../components/Button';
 import { useProjectsStore } from '../store/projectsStore';
-import { defaultDetailProjectId } from '../mocks/data';
 import { colors } from '../theme/colors';
 import type { RejectionReason, Scene, SceneStatus } from '../types';
 import type { RootStackParamList } from '../navigation/types';
@@ -122,7 +121,7 @@ function SceneCard({
 export function ProjectDetailScreen() {
   const route = useRoute<NativeStackScreenProps<RootStackParamList, 'ProjectDetail'>['route']>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const projectId = route.params?.projectId ?? defaultDetailProjectId;
+  const projectId = route.params?.projectId;
 
   const project = useProjectsStore((state) => state.getProjectById(projectId));
   const {
@@ -144,30 +143,30 @@ export function ProjectDetailScreen() {
   const allApproved = project.scenes.length > 0 && project.scenes.every((scene) => scene.status === 'approved');
   const isFinalReview = project.status === 'pending_review' || project.status === 'approved' || project.status === 'uploaded';
 
-  const handleSceneApprove = (sceneId: string) => {
-    updateSceneStatus(projectId, sceneId, 'approved');
+  const handleSceneApprove = async (sceneId: string) => {
+    await updateSceneStatus(projectId, sceneId, 'approved');
   };
 
-  const handleSceneReject = (sceneId: string) => {
-    updateSceneStatus(projectId, sceneId, 'rejected');
+  const handleSceneReject = async (sceneId: string) => {
+    await updateSceneStatus(projectId, sceneId, 'rejected');
   };
 
-  const handleSceneRegenerate = (sceneId: string) => {
-    updateSceneStatus(projectId, sceneId, 'script_ready');
+  const handleSceneRegenerate = async (sceneId: string) => {
+    await updateSceneStatus(projectId, sceneId, 'script_ready');
   };
 
-  const handleApproveAll = () => {
-    approveAllScenes(projectId);
+  const handleApproveAll = async () => {
+    await approveAllScenes(projectId);
   };
 
-  const handleFinalApprove = () => {
-    updateProjectStatus(projectId, 'approved');
+  const handleFinalApprove = async () => {
+    await updateProjectStatus(projectId, 'approved');
   };
 
-  const handleFinalReject = () => {
+  const handleFinalReject = async () => {
     console.log(`Final rejection for project ${projectId}`);
     setFinalRejectModalVisible(false);
-    updateProjectStatus(projectId, 'processing');
+    await updateProjectStatus(projectId, 'processing');
   };
 
   return (
