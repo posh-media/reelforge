@@ -5,6 +5,9 @@ import { createHash } from 'crypto';
 admin.initializeApp();
 
 const db = admin.firestore();
+const secretsManager = functions.runWith({
+  serviceAccount: 'reelforge-secrets-manager@reelforge-4b07d.iam.gserviceaccount.com',
+});
 
 let secretManager: import('@google-cloud/secret-manager').SecretManagerServiceClient | null = null;
 function getSecretManager(): import('@google-cloud/secret-manager').SecretManagerServiceClient {
@@ -97,7 +100,7 @@ async function deleteSecret(name: string): Promise<void> {
   await getSecretManager().deleteSecret({ name });
 }
 
-export const saveApiKey = functions.https.onCall(async (data, context) => {
+export const saveApiKey = secretsManager.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
   }
@@ -135,7 +138,7 @@ export const saveApiKey = functions.https.onCall(async (data, context) => {
   return { success: true, serviceId };
 });
 
-export const deleteApiKey = functions.https.onCall(async (data, context) => {
+export const deleteApiKey = secretsManager.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
   }

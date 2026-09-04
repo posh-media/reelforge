@@ -17,6 +17,7 @@ import {
 import { db } from '../services/firebase';
 import { useAuthStore } from './authStore';
 import { mockProjects } from '../mocks/data';
+import { SEED_MOCK_PROJECTS } from '../config';
 import type {
   Project,
   ProjectStatus,
@@ -178,7 +179,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
 
         set({ projects, isLoading: false });
 
-        if (!hasSeeded && projects.length === 0) {
+        if (SEED_MOCK_PROJECTS && !hasSeeded && projects.length === 0) {
           hasSeeded = true;
           get().seedMockProjectsIfEmpty();
         }

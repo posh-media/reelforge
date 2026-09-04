@@ -45,8 +45,11 @@ GoogleService-Info.plist
 /ios
 /android
 
+# generated native folders
+/ios
+/android
+
 # generated assets
-screenshots/
 *.zip
 
 # Firebase emulator / build artifacts
@@ -60,3 +63,5 @@ scripts/e2e-live-key.js
 scripts/verify-live-app.js
 scripts/verify-live-key-ui.js
 scripts/verify-settings.js
+scripts/debug-settings*.js
+scripts/live-sa-test.js
