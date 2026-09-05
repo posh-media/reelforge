@@ -12,6 +12,7 @@ module.exports = function (api) {
           allowlist: null,
           safe: false,
           allowUndefined: true,
+          systemvars: true,
         },
       ],
     ],
