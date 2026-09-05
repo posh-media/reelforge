@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,51 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Play, Download } from 'lucide-react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../services/firebase';
+import { getDownloadURL, ref } from 'firebase/storage';
+import { functions, storage } from '../services/firebase';
 import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Video, ResizeMode } from 'expo-av';
 import { StatusBadge } from '../components/StatusBadge';
 import { PipelineTracker } from '../components/PipelineTracker';
 import { Button } from '../components/Button';
 import { useProjectsStore } from '../store/projectsStore';
+import { useAuthStore } from '../store/authStore';
+import { registerForPushNotificationsAsync } from '../services/notifications';
 import { colors } from '../theme/colors';
 import type { RejectionReason, Scene, SceneStatus } from '../types';
 import type { RootStackParamList } from '../navigation/types';
+
+function useDownloadUrl(storagePath?: string) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!storagePath) {
+      setUrl(null);
+      return;
+    }
+    const load = async () => {
+      try {
+        if (storagePath.startsWith('http')) {
+          setUrl(storagePath);
+          return;
+        }
+        const storageRef = ref(storage, storagePath);
+        const downloadUrl = await getDownloadURL(storageRef);
+        if (mounted) setUrl(downloadUrl);
+      } catch (err) {
+        console.error('Failed to get download URL:', err);
+        if (mounted) setUrl(null);
+      }
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, [storagePath]);
+
+  return url;
+}
 
 const rejectionReasons: RejectionReason[] = [
   'Bad script',
@@ -140,6 +176,17 @@ export function ProjectDetailScreen() {
   const regenerateSceneCallable = httpsCallable(functions, 'regenerateScene');
 
   const [finalRejectModalVisible, setFinalRejectModalVisible] = useState(false);
+  const { user } = useAuthStore();
+  const hasRequestedPermission = useRef(false);
+
+  useEffect(() => {
+    if (project?.status === 'processing' && user && !hasRequestedPermission.current) {
+      hasRequestedPermission.current = true;
+      void registerForPushNotificationsAsync(user.uid);
+    }
+  }, [project?.status, user]);
+
+  const finalVideoUrl = useDownloadUrl(project?.finalVideoUrl);
 
   if (!project) {
     return (
@@ -207,14 +254,25 @@ export function ProjectDetailScreen() {
         {isFinalReview && (
           <View className="mb-6">
             <Text className="text-textSecondary font-body text-sm mb-2">Stitched video preview</Text>
-            <View
-              className="bg-surfaceElevated rounded-xl items-center justify-center border border-border/30"
-              style={{ aspectRatio: 16 / 9 }}
-            >
-              <View className="w-16 h-16 rounded-full bg-accentAmber/20 items-center justify-center">
-                <Play size={32} color={colors.accentAmber} fill={colors.accentAmber} />
+            {finalVideoUrl ? (
+              <Video
+                source={{ uri: finalVideoUrl }}
+                className="bg-surfaceElevated rounded-xl border border-border/30"
+                style={{ width: '100%', aspectRatio: 16 / 9 }}
+                useNativeControls
+                resizeMode={ResizeMode.CONTAIN}
+                isLooping={false}
+              />
+            ) : (
+              <View
+                className="bg-surfaceElevated rounded-xl items-center justify-center border border-border/30"
+                style={{ aspectRatio: 16 / 9 }}
+              >
+                <View className="w-16 h-16 rounded-full bg-accentAmber/20 items-center justify-center">
+                  <Play size={32} color={colors.accentAmber} fill={colors.accentAmber} />
+                </View>
               </View>
-            </View>
+            )}
             {project.status === 'pending_review' && (
               <View className="mt-4">
                 <View className="mb-3">

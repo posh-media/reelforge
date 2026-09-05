@@ -208,6 +208,104 @@ export const onUsageLogCreated = pipeline.firestore
     });
   });
 
+function isTransientError(err: unknown): boolean {
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    const code = err.code;
+    if (['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN'].includes(code || '')) {
+      return true;
+    }
+    if (status && [408, 429, 500, 502, 503, 504].includes(status)) {
+      return true;
+    }
+  }
+  const msg = err instanceof Error ? err.message.toLowerCase() : '';
+  return (
+    msg.includes('timeout') ||
+    msg.includes('timed out') ||
+    msg.includes('rate limit') ||
+    msg.includes('too many') ||
+    msg.includes('temporary') ||
+    msg.includes('service unavailable') ||
+    msg.includes('connection reset') ||
+    msg.includes('econn')
+  );
+}
+
+async function executeSceneOperation<T>(
+  userId: string,
+  projectId: string,
+  sceneId: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  const sceneRef = scenePath(userId, projectId, sceneId);
+  const sceneSnap = await sceneRef.get();
+  const scene = sceneSnap.data() as Record<string, unknown> | undefined;
+  const retryCount = (scene?.retryCount as number) ?? 0;
+  const maxAttempts = retryCount >= 1 ? 1 : 2;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts - 1 && isTransientError(err)) {
+        await sceneRef.update({ retryCount: retryCount + attempt + 1 });
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+async function sendPushToUser(userId: string, title: string, body: string, data: Record<string, string>): Promise<void> {
+  const tokensSnap = await db.collection('users').doc(userId).collection('fcmTokens').get();
+  if (tokensSnap.empty) return;
+
+  const expoMessages: any[] = [];
+  for (const doc of tokensSnap.docs) {
+    const t = doc.data() as Record<string, unknown>;
+    const token = (t.token as string) ?? '';
+    const tokenType = (t.tokenType as string) ?? 'fcm';
+    if (!token) continue;
+
+    if (tokenType === 'expo') {
+      expoMessages.push({
+        to: token,
+        sound: 'default',
+        title,
+        body,
+        data,
+      });
+    } else {
+      try {
+        await admin.messaging().send({
+          token,
+          notification: { title, body },
+          data,
+          android: { priority: 'high' },
+        });
+      } catch (err) {
+        console.warn(`Failed to send FCM to ${token.slice(0, 12)}...`, (err as Error).message);
+      }
+    }
+  }
+
+  if (expoMessages.length > 0) {
+    try {
+      await axios.post('https://exp.host/--/api/v2/push/send', expoMessages, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+      });
+    } catch (err) {
+      console.warn('Failed to send Expo push:', (err as Error).message);
+    }
+  }
+}
+
 export const generateBreakdown = pipeline.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
@@ -391,46 +489,49 @@ async function doGenerateSceneVoice(
   const dialogue = (scene.dialogue as { speaker: string; line: string }[] | undefined) ?? undefined;
   const sceneScript = (scene.script as string) ?? '';
 
-  let audioBuffer: Buffer;
-  let characterCount = 0;
+  await executeSceneOperation(userId, projectId, sceneId, async () => {
+    let audioBuffer: Buffer;
+    let characterCount = 0;
 
-  if (dialogue && dialogue.length > 0) {
-    const buffers: Buffer[] = [];
-    for (const line of dialogue) {
-      const voiceId = characterVoice(line.speaker);
-      const lineAudio = await callElevenLabsTTS(apiKey, voiceId, line.line);
-      buffers.push(lineAudio);
-      characterCount += line.line.length;
+    if (dialogue && dialogue.length > 0) {
+      const buffers: Buffer[] = [];
+      for (const line of dialogue) {
+        const voiceId = characterVoice(line.speaker);
+        const lineAudio = await callElevenLabsTTS(apiKey, voiceId, line.line);
+        buffers.push(lineAudio);
+        characterCount += line.line.length;
+      }
+      audioBuffer = Buffer.concat(buffers);
+    } else {
+      const characterName = ((scene.characterNames as string[]) ?? [])[0] ?? characters[0].name;
+      const voiceId = characterVoice(characterName);
+      audioBuffer = await callElevenLabsTTS(apiKey, voiceId, sceneScript);
+      characterCount = sceneScript.length;
     }
-    audioBuffer = Buffer.concat(buffers);
-  } else {
-    const characterName = ((scene.characterNames as string[]) ?? [])[0] ?? characters[0].name;
-    const voiceId = characterVoice(characterName);
-    audioBuffer = await callElevenLabsTTS(apiKey, voiceId, sceneScript);
-    characterCount = sceneScript.length;
-  }
 
-  const storagePath = `users/${userId}/projects/${projectId}/scenes/${sceneId}/audio.mp3`;
-  await storage
-    .bucket()
-    .file(storagePath)
-    .save(audioBuffer, { contentType: 'audio/mpeg' });
+    const storagePath = `users/${userId}/projects/${projectId}/scenes/${sceneId}/audio.mp3`;
+    await storage
+      .bucket()
+      .file(storagePath)
+      .save(audioBuffer, { contentType: 'audio/mpeg' });
 
-  const duration = await getAudioDuration(audioBuffer);
+    const duration = await getAudioDuration(audioBuffer);
 
-  await logUsage(userId, projectId, {
-    service: 'elevenlabs',
-    operation: 'generateSceneVoice',
-    sceneId,
-    units: { characters: characterCount, durationSeconds: Math.round(duration) },
-    estimatedCostUsd: estimateElevenLabsCost(characterCount),
-  });
+    await logUsage(userId, projectId, {
+      service: 'elevenlabs',
+      operation: 'generateSceneVoice',
+      sceneId,
+      units: { characters: characterCount, durationSeconds: Math.round(duration) },
+      estimatedCostUsd: estimateElevenLabsCost(characterCount),
+    });
 
-  await scenePath(userId, projectId, sceneId).update({
-    audioUrl: storagePath,
-    durationSeconds: Math.round(duration),
-    status: 'voice_ready',
-    lastError: admin.firestore.FieldValue.delete(),
+    await scenePath(userId, projectId, sceneId).update({
+      audioUrl: storagePath,
+      durationSeconds: Math.round(duration),
+      status: 'voice_ready',
+      retryCount: 0,
+      lastError: admin.firestore.FieldValue.delete(),
+    });
   });
 }
 
@@ -488,32 +589,36 @@ async function doGenerateSceneVideo(
   ].join('\n\n');
 
   const falKey = await getSecretValue(userId, 'falai');
-  const body: Record<string, any> = {
-    prompt,
-    duration: clampedDuration.toString(),
-    resolution: '720p',
-    aspect_ratio: '16:9',
-    generate_audio: false,
-    seed: Math.floor(Math.random() * 1000000),
-  };
-  if (FAL_WEBHOOK_URL) {
-    body.webhook_url = FAL_WEBHOOK_URL;
-  }
 
-  const res = await axios.post(`https://queue.fal.run/${endpoint}`, body, {
-    headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-    timeout: 30000,
-  });
+  await executeSceneOperation(userId, projectId, sceneId, async () => {
+    const body: Record<string, any> = {
+      prompt,
+      duration: clampedDuration.toString(),
+      resolution: '720p',
+      aspect_ratio: '16:9',
+      generate_audio: false,
+      seed: Math.floor(Math.random() * 1000000),
+    };
+    if (FAL_WEBHOOK_URL) {
+      body.webhook_url = FAL_WEBHOOK_URL;
+    }
 
-  const requestId = res.data?.request_id as string | undefined;
-  if (!requestId) throw new Error('fal queue did not return a request_id.');
+    const res = await axios.post(`https://queue.fal.run/${endpoint}`, body, {
+      headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
+      timeout: 30000,
+    });
 
-  await scenePath(userId, projectId, sceneId).update({
-    status: 'video_generating',
-    falRequestId: requestId,
-    falEndpoint: endpoint,
-    falRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
-    lastError: admin.firestore.FieldValue.delete(),
+    const requestId = res.data?.request_id as string | undefined;
+    if (!requestId) throw new Error('fal queue did not return a request_id.');
+
+    await scenePath(userId, projectId, sceneId).update({
+      status: 'video_generating',
+      falRequestId: requestId,
+      falEndpoint: endpoint,
+      falRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      retryCount: 0,
+      lastError: admin.firestore.FieldValue.delete(),
+    });
   });
 }
 
@@ -574,6 +679,24 @@ export const onSceneUpdated = pipeline.firestore
         await doGenerateSceneLipsync(userId, projectId, sceneId);
       } catch (err) {
         await withSceneError(userId, projectId, sceneId, err);
+      }
+    }
+
+    if (after.status === 'lipsync_ready' && !project.notifiedAllScenesReady) {
+      try {
+        const scenesSnap = await projectPath(userId, projectId).collection('scenes').get();
+        const allReady = scenesSnap.docs.every((d) => d.data().status === 'lipsync_ready');
+        if (allReady) {
+          await projectPath(userId, projectId).update({ notifiedAllScenesReady: true });
+          await sendPushToUser(
+            userId,
+            'All scenes are ready',
+            'Every scene has finished lip-sync. Open Reelforge to review and stitch.',
+            { projectId, screen: 'ProjectDetail' }
+          );
+        }
+      } catch (err) {
+        console.error('Failed to send all-scenes-ready notification:', (err as Error).message);
       }
     }
   });
@@ -757,7 +880,14 @@ async function doStitchProject(userId: string, projectId: string): Promise<void>
       status: 'pending_review',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       lastError: admin.firestore.FieldValue.delete(),
+      notifiedFinalReady: true,
     });
+    await sendPushToUser(
+      userId,
+      'Final video is ready',
+      'Your stitched video is ready for final review.',
+      { projectId, screen: 'ProjectDetail' }
+    );
   } catch (err) {
     await projectPath(userId, projectId).update({
       status: 'processing',
@@ -1049,32 +1179,39 @@ async function doGenerateSceneLipsync(userId: string, projectId: string, sceneId
   }
 
   const apiKey = await getSecretValue(userId, 'synclabs');
-  const [videoSignedUrl, audioSignedUrl] = await Promise.all([getSignedDownloadUrl(videoUrl), getSignedDownloadUrl(audioUrl)]);
 
-  const res = await axios.post(
-    `${SYNC_BASE_URL}/v2/generate`,
-    {
-      input: [
-        { type: 'video', url: videoSignedUrl },
-        { type: 'audio', url: audioSignedUrl },
-      ],
-      model: 'lipsync-2',
-      webhook_url: SYNC_WEBHOOK_URL,
-    },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 60000,
-    }
-  );
+  await executeSceneOperation(userId, projectId, sceneId, async () => {
+    const [videoSignedUrl, audioSignedUrl] = await Promise.all([
+      getSignedDownloadUrl(videoUrl),
+      getSignedDownloadUrl(audioUrl),
+    ]);
 
-  const syncGenerationId = res.data?.id as string | undefined;
-  if (!syncGenerationId) throw new Error('Sync Labs did not return a generation id.');
+    const res = await axios.post(
+      `${SYNC_BASE_URL}/v2/generate`,
+      {
+        input: [
+          { type: 'video', url: videoSignedUrl },
+          { type: 'audio', url: audioSignedUrl },
+        ],
+        model: 'lipsync-2',
+        webhook_url: SYNC_WEBHOOK_URL,
+      },
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000,
+      }
+    );
 
-  await scenePath(userId, projectId, sceneId).update({
-    status: 'lipsync_generating',
-    syncGenerationId,
-    syncRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
-    lastError: admin.firestore.FieldValue.delete(),
+    const syncGenerationId = res.data?.id as string | undefined;
+    if (!syncGenerationId) throw new Error('Sync Labs did not return a generation id.');
+
+    await scenePath(userId, projectId, sceneId).update({
+      status: 'lipsync_generating',
+      syncGenerationId,
+      syncRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      retryCount: 0,
+      lastError: admin.firestore.FieldValue.delete(),
+    });
   });
 }
 

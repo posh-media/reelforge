@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { LoginScreen } from '../screens/LoginScreen';
 import { ProjectDetailScreen } from '../screens/ProjectDetailScreen';
 import { SceneBreakdownScreen } from '../screens/SceneBreakdownScreen';
@@ -8,6 +9,7 @@ import { TabNavigator } from './TabNavigator';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme/colors';
 import type { RootStackParamList } from './types';
+import { configureNotificationHandler, registerForPushNotificationsAsync } from '../services/notifications';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -33,13 +35,38 @@ const linking = {
 
 export function RootNavigator() {
   const { user, isLoading } = useAuthStore();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const notificationHandlerConfigured = useRef(false);
+
+  useEffect(() => {
+    if (!notificationHandlerConfigured.current) {
+      configureNotificationHandler();
+      notificationHandlerConfigured.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      void registerForPushNotificationsAsync(user.uid);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as { projectId?: string };
+      if (data?.projectId && navigationRef.isReady()) {
+        navigationRef.navigate('ProjectDetail', { projectId: data.projectId });
+      }
+    });
+    return () => subscription.remove();
+  }, [navigationRef]);
 
   if (isLoading) {
     return null;
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer linking={linking} ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: colors.background },

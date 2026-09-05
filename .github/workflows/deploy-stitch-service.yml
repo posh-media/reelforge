@@ -1,0 +1,75 @@
+name: Deploy Stitch Service to Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cloud-run/stitch-service/**'
+      - '.github/workflows/deploy-stitch-service.yml'
+
+env:
+  GCP_PROJECT_ID: reelforge-4b07d
+  GCP_REGION: us-central1
+  SERVICE_NAME: stitch-service
+  STORAGE_BUCKET: reelforge-4b07d.appspot.com
+  PIPELINE_SA: reelforge-pipeline@reelforge-4b07d.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Requires the GCP_SA_KEY repository secret containing the JSON key for a
+      # service account with permission to build and deploy Cloud Run.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: '>= 420.0.0'
+
+      - name: Build and push container image
+        run: |
+          gcloud builds submit \
+            --tag gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest \
+            cloud-run/stitch-service
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest \
+            --region ${{ env.GCP_REGION }} \
+            --service-account ${{ env.PIPELINE_SA }} \
+            --set-env-vars STORAGE_BUCKET=${{ env.STORAGE_BUCKET }} \
+            --no-allow-unauthenticated
+
+      - name: Grant pipeline service account Cloud Run invoker
+        run: |
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region ${{ env.GCP_REGION }} \
+            --member serviceAccount:${{ env.PIPELINE_SA }} \
+            --role roles/run.invoker
+
+      - name: Write STITCH_SERVICE_URL into functions/.env
+        run: |
+          STITCH_URL="$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.GCP_REGION }} --format='value(status.url)')"
+          echo "STITCH_SERVICE_URL=${STITCH_URL}/stitch" > functions/.env
+          echo "Stitch service URL: ${STITCH_URL}/stitch"
+
+      # Re-deploy functions so the new STITCH_SERVICE_URL is picked up.
+      # Requires the FIREBASE_TOKEN repository secret.
+      - name: Deploy Firebase Functions
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        if: ${{ env.FIREBASE_TOKEN != '' }}
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only functions
