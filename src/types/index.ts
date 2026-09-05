@@ -12,6 +12,7 @@ export type SceneStatus =
   | 'voice_ready'
   | 'video_ready'
   | 'lipsync_ready'
+  | 'lipsync_generating'
   | 'approved'
   | 'rejected'
   | 'failed'
@@ -47,9 +48,17 @@ export interface Scene {
   characterNames: string[];
   videoUrl?: string;
   audioUrl?: string;
+  finalVideoUrl?: string;
   durationSeconds: number;
   dialogue?: { speaker: string; line: string }[];
   lastError?: string;
+  retryCount?: number;
+  falRequestId?: string;
+  falEndpoint?: string;
+  falRequestedAt?: string;
+  falWebhookReceivedAt?: string;
+  syncGenerationId?: string;
+  syncRequestedAt?: string;
 }
 
 export interface Project {
@@ -66,6 +75,8 @@ export interface Project {
   updatedAt: string;
   idea?: string;
   lastError?: string;
+  finalVideoUrl?: string;
+  estimatedCostUsd?: number;
 }
 
 export interface ApiKeyEntry {

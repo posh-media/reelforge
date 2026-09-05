@@ -14,8 +14,9 @@ import {
   Timestamp,
   type FirestoreDataConverter,
 } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db, functions } from '../services/firebase';
 import { useAuthStore } from './authStore';
+import { httpsCallable } from 'firebase/functions';
 import { mockProjects } from '../mocks/data';
 import { SEED_MOCK_PROJECTS } from '../config';
 import type {
@@ -108,6 +109,8 @@ function projectFromDoc(id: string, data: Record<string, unknown>): Project {
     updatedAt: convertTimestamp(data.updatedAt) ?? nowIso(),
     idea: data.idea as string | undefined,
     lastError: (data.lastError as string | undefined) ?? undefined,
+    finalVideoUrl: data.finalVideoUrl as string | undefined,
+    estimatedCostUsd: (data.estimatedCostUsd as number) ?? 0,
   };
 }
 
@@ -120,9 +123,17 @@ function sceneFromDoc(id: string, data: Record<string, unknown>): Scene {
     characterNames: (data.characterNames as string[]) ?? [],
     videoUrl: data.videoUrl as string | undefined,
     audioUrl: data.audioUrl as string | undefined,
+    finalVideoUrl: data.finalVideoUrl as string | undefined,
     durationSeconds: (data.durationSeconds as number) ?? 0,
     dialogue: (data.dialogue as { speaker: string; line: string }[] | undefined) ?? undefined,
     lastError: (data.lastError as string | undefined) ?? undefined,
+    retryCount: (data.retryCount as number | undefined) ?? 0,
+    falRequestId: data.falRequestId as string | undefined,
+    falEndpoint: data.falEndpoint as string | undefined,
+    falRequestedAt: convertTimestamp(data.falRequestedAt) ?? undefined,
+    falWebhookReceivedAt: convertTimestamp(data.falWebhookReceivedAt) ?? undefined,
+    syncGenerationId: data.syncGenerationId as string | undefined,
+    syncRequestedAt: convertTimestamp(data.syncRequestedAt) ?? undefined,
   };
 }
 
@@ -415,10 +426,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
     approveAllScenes: async (projectId) => {
       const user = useAuthStore.getState().user;
       if (!user) throw new Error('Not authenticated');
-      await updateDoc(projectDoc(user.uid, projectId), {
-        status: 'pending_review',
-        updatedAt: nowIso(),
-      });
+      const stitchProjectCallable = httpsCallable(functions, 'stitchProject');
+      await stitchProjectCallable({ projectId });
     },
 
     seedMockProjectsIfEmpty: async () => {

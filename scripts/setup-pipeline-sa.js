@@ -69,6 +69,20 @@ async function main() {
 
   await apiRequest('cloudresourcemanager.googleapis.com', `/v1/projects/${PROJECT_ID}:setIamPolicy`, 'POST', { policy });
   console.log(`Granted ${roles.join(', ')} to ${SA_EMAIL}`);
+
+  // Self-binding so the SA can mint signed URLs for Storage/Sync inputs.
+  const rawSaPolicy = await apiRequest('iam.googleapis.com', `/v1/projects/${PROJECT_ID}/serviceAccounts/${SA_EMAIL}:getIamPolicy`, 'POST', { options: { requestedPolicyVersion: 3 } });
+  const saPolicy = { bindings: rawSaPolicy.bindings ?? [], ...(rawSaPolicy.etag ? { etag: rawSaPolicy.etag } : {}) };
+  const tokenRole = 'roles/iam.serviceAccountTokenCreator';
+  const selfBinding = saPolicy.bindings.find((b) => b.role === tokenRole);
+  if (selfBinding) {
+    if (!selfBinding.members.includes(member)) selfBinding.members.push(member);
+  } else {
+    saPolicy.bindings.push({ role: tokenRole, members: [member] });
+  }
+  await apiRequest('iam.googleapis.com', `/v1/projects/${PROJECT_ID}/serviceAccounts/${SA_EMAIL}:setIamPolicy`, 'POST', { policy: saPolicy });
+  console.log(`Granted ${tokenRole} as self-binding on ${SA_EMAIL}`);
+
   console.log('\nDone. Update functions/src/index.ts to use this SA for the new pipeline functions.');
 }
 

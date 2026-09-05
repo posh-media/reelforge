@@ -70,6 +70,11 @@ const statusConfig: Record<StatusBadgeStatus, { label: string; containerClass: s
     containerClass: 'bg-accentViolet/20',
     textClass: 'text-accentViolet',
   },
+  lipsync_generating: {
+    label: 'Lip-sync generating',
+    containerClass: 'bg-accentViolet/20',
+    textClass: 'text-accentViolet',
+  },
   failed: {
     label: 'Failed',
     containerClass: 'bg-statusError/20',

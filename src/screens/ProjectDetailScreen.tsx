@@ -195,6 +195,9 @@ export function ProjectDetailScreen() {
               {project.scenes.length} scenes · {Math.round(project.scenes.reduce((s, scene) => s + scene.durationSeconds, 0) / 60 * 10) / 10} min · {project.videoModel}
             </Text>
           </View>
+          <Text className="text-textSecondary font-body text-xs mt-2">
+            Estimated cost so far: ${(project.estimatedCostUsd ?? 0).toFixed(2)}
+          </Text>
         </View>
 
         <View className="bg-surface rounded-xl p-4 mb-6 border border-border/30">
