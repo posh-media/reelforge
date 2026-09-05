@@ -15,6 +15,9 @@ env:
   SERVICE_NAME: stitch-service
   STORAGE_BUCKET: reelforge-4b07d.appspot.com
   PIPELINE_SA: reelforge-pipeline@reelforge-4b07d.iam.gserviceaccount.com
+  YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+  YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+  FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
 jobs:
   deploy:
@@ -58,17 +61,16 @@ jobs:
             --member serviceAccount:${{ env.PIPELINE_SA }} \
             --role roles/run.invoker
 
-      - name: Write STITCH_SERVICE_URL into functions/.env
+      - name: Write functions/.env with service URLs and OAuth config
         run: |
           STITCH_URL="$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.GCP_REGION }} --format='value(status.url)')"
           echo "STITCH_SERVICE_URL=${STITCH_URL}/stitch" > functions/.env
+          echo "YOUTUBE_CLIENT_ID=${{ env.YOUTUBE_CLIENT_ID }}" >> functions/.env
+          echo "YOUTUBE_CLIENT_SECRET=${{ env.YOUTUBE_CLIENT_SECRET }}" >> functions/.env
           echo "Stitch service URL: ${STITCH_URL}/stitch"
 
-      # Re-deploy functions so the new STITCH_SERVICE_URL is picked up.
-      # Requires the FIREBASE_TOKEN repository secret.
+      # Re-deploy functions so the new STITCH_SERVICE_URL and YouTube config are picked up.
       - name: Deploy Firebase Functions
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         if: ${{ env.FIREBASE_TOKEN != '' }}
         uses: w9jds/firebase-action@master
         with:
