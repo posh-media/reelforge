@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { LoginScreen } from '../screens/LoginScreen';
 import { ProjectDetailScreen } from '../screens/ProjectDetailScreen';
 import { SceneBreakdownScreen } from '../screens/SceneBreakdownScreen';
+import { PublishScreen } from '../screens/PublishScreen';
 import { TabNavigator } from './TabNavigator';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme/colors';
@@ -14,7 +15,7 @@ import { configureNotificationHandler, registerForPushNotificationsAsync } from 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const linking = {
-  prefixes: [],
+  prefixes: ['reelforge://'],
   config: {
     screens: {
       Login: 'login',
@@ -29,6 +30,7 @@ const linking = {
       },
       ProjectDetail: 'project/:projectId',
       SceneBreakdown: 'breakdown/:projectId',
+      Publish: 'publish/:projectId',
     },
   },
 };
@@ -97,6 +99,11 @@ export function RootNavigator() {
               name="SceneBreakdown"
               component={SceneBreakdownScreen}
               options={{ title: 'Scene breakdown' }}
+            />
+            <Stack.Screen
+              name="Publish"
+              component={PublishScreen}
+              options={{ title: 'Publish' }}
             />
           </>
         )}

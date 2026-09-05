@@ -30,6 +30,7 @@ const SERVICE_NAMES: Record<string, string> = {
   elevenlabs: 'ElevenLabs',
   falai: 'fal.ai',
   synclabs: 'Sync Labs',
+  youtube: 'YouTube',
 };
 
 const saveApiKeyCallable = httpsCallable(functions, 'saveApiKey');

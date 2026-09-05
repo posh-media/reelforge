@@ -6,6 +6,7 @@ export type RootStackParamList = {
   MainTabs: undefined;
   ProjectDetail: { projectId: string };
   SceneBreakdown: { projectId: string };
+  Publish: { projectId: string };
 };
 
 export type MainTabParamList = {

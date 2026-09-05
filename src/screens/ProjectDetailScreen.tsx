@@ -5,10 +5,12 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Play, Download } from 'lucide-react-native';
+import { Play, Download, ExternalLink } from 'lucide-react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { downloadVideo } from '../services/downloads';
 import { httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref } from 'firebase/storage';
 import { functions, storage } from '../services/firebase';
@@ -70,12 +72,14 @@ function SceneCard({
   onApprove,
   onReject,
   onRegenerate,
+  onDownload,
 }: {
   scene: Scene;
   readOnly: boolean;
   onApprove?: () => void;
   onReject?: () => void;
   onRegenerate?: () => void;
+  onDownload?: () => void;
 }) {
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
 
@@ -90,10 +94,11 @@ function SceneCard({
         </View>
         {!readOnly && (
           <Pressable
-            onPress={() => console.log(`Download scene ${scene.id}`)}
+            onPress={onDownload ?? (() => {})}
+            disabled={!scene.finalVideoUrl}
             className="p-2"
           >
-            <Download size={18} color={colors.textSecondary} />
+            <Download size={18} color={scene.finalVideoUrl ? colors.textSecondary : colors.textSecondary + '80'} />
           </Pressable>
         )}
       </View>
@@ -221,12 +226,34 @@ export function ProjectDetailScreen() {
 
   const handleFinalApprove = async () => {
     await updateProjectStatus(projectId, 'approved');
+    navigation.navigate('Publish', { projectId });
   };
 
   const handleFinalReject = async () => {
-    console.log(`Final rejection for project ${projectId}`);
     setFinalRejectModalVisible(false);
     await updateProjectStatus(projectId, 'processing');
+  };
+
+  const handleDownloadScene = async (scene: Scene) => {
+    if (!scene.finalVideoUrl) return;
+    try {
+      await downloadVideo(scene.finalVideoUrl, `reelforge-scene-${scene.order}.mp4`);
+    } catch (err) {
+      console.error('Scene download failed:', err);
+    }
+  };
+
+  const handleDownloadFull = async () => {
+    if (!project.finalVideoUrl) return;
+    try {
+      await downloadVideo(project.finalVideoUrl, `reelforge-${project.id}-final.mp4`);
+    } catch (err) {
+      console.error('Full video download failed:', err);
+    }
+  };
+
+  const handlePublish = () => {
+    navigation.navigate('Publish', { projectId });
   };
 
   return (
@@ -285,6 +312,34 @@ export function ProjectDetailScreen() {
                 />
               </View>
             )}
+            {(project.status === 'pending_review' || project.status === 'approved' || project.status === 'uploaded') && (
+              <View className="mt-4">
+                <View className="mb-3">
+                  <Button
+                    title="Download full video"
+                    onPress={handleDownloadFull}
+                    variant="outline"
+                    disabled={!project.finalVideoUrl}
+                  />
+                </View>
+              </View>
+            )}
+            {project.status === 'approved' && (
+              <View className="mt-4">
+                <Button title="Publish to YouTube" onPress={handlePublish} variant="primary" />
+              </View>
+            )}
+            {project.status === 'uploaded' && project.youtubeUrl && (
+              <View className="mt-4">
+                <View className="flex-row items-center mb-3">
+                  <ExternalLink size={16} color={colors.accentAmber} />
+                  <Text className="text-textSecondary font-body text-sm ml-2">
+                    Uploaded as {project.youtubeVisibility ?? 'Private'}
+                  </Text>
+                </View>
+                <Button title="Open on YouTube" onPress={() => project.youtubeUrl && Linking.openURL(project.youtubeUrl)} variant="secondary" />
+              </View>
+            )}
           </View>
         )}
 
@@ -324,6 +379,7 @@ export function ProjectDetailScreen() {
             onApprove={() => handleSceneApprove(scene.id)}
             onReject={() => handleSceneReject(scene.id)}
             onRegenerate={() => handleSceneRegenerate(scene.id)}
+            onDownload={() => handleDownloadScene(scene)}
           />
         ))}
 

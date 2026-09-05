@@ -8,10 +8,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyRound, Play, Trash2 } from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { httpsCallable } from 'firebase/functions';
 import { useSettingsStore } from '../store/settingsStore';
 import { Button } from '../components/Button';
+import { functions } from '../services/firebase';
 import { colors } from '../theme/colors';
 import type { ApiKeyEntry } from '../types';
+
+const youtubeAuthUrlCallable = httpsCallable(functions, 'youtubeAuthUrl');
 
 const serviceInfo = [
   { id: 'anthropic', name: 'Anthropic (Claude)', icon: KeyRound },
@@ -195,6 +200,29 @@ function VideoProviderRow({
 
 export function SettingsScreen() {
   const { apiKeys, videoProviders, saveApiKey, deleteApiKey } = useSettingsStore();
+  const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
+
+  const youtubeEntry = apiKeys.find((k) => k.serviceId === 'youtube');
+  const isYouTubeConnected = youtubeEntry?.isConnected ?? false;
+
+  const handleConnectYouTube = async () => {
+    setIsConnectingYouTube(true);
+    try {
+      const res = await youtubeAuthUrlCallable();
+      const url = (res.data as { url?: string }).url;
+      if (url) {
+        await WebBrowser.openBrowserAsync(url);
+      }
+    } catch (err) {
+      console.error('Failed to start YouTube OAuth:', err);
+    } finally {
+      setIsConnectingYouTube(false);
+    }
+  };
+
+  const handleDisconnectYouTube = async () => {
+    await deleteApiKey('youtube');
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'left', 'right']}>
@@ -238,11 +266,37 @@ export function SettingsScreen() {
               <Play size={20} color={colors.accentAmber} />
               <Text className="text-textPrimary font-body-semibold text-base ml-3">YouTube</Text>
             </View>
-            <View className="bg-surfaceElevated px-2.5 py-1 rounded-full">
-              <Text className="text-textSecondary text-xs font-body-semibold">Not connected</Text>
+            <View
+              className={[
+                'px-2.5 py-1 rounded-full',
+                isYouTubeConnected ? 'bg-statusSuccess/20' : 'bg-surfaceElevated',
+              ].join(' ')}
+            >
+              <Text
+                className={[
+                  'text-xs font-body-semibold',
+                  isYouTubeConnected ? 'text-statusSuccess' : 'text-textSecondary',
+                ].join(' ')}
+              >
+                {isYouTubeConnected ? 'Connected' : 'Not connected'}
+              </Text>
             </View>
           </View>
-          <Button title="Connect YouTube" onPress={() => console.log('Connect YouTube tapped')} variant="secondary" />
+          {isYouTubeConnected ? (
+            <Button
+              title="Disconnect YouTube"
+              onPress={handleDisconnectYouTube}
+              variant="danger"
+              disabled={isConnectingYouTube}
+            />
+          ) : (
+            <Button
+              title="Connect YouTube"
+              onPress={handleConnectYouTube}
+              variant="secondary"
+              disabled={isConnectingYouTube}
+            />
+          )}
         </View>
 
         <Text className="text-textSecondary font-body text-sm text-center mt-2">

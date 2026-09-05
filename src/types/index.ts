@@ -77,6 +77,15 @@ export interface Project {
   lastError?: string;
   finalVideoUrl?: string;
   estimatedCostUsd?: number;
+  youtubeDraft?: {
+    title: string;
+    description: string;
+    tags: string[];
+  };
+  youtubeVideoId?: string;
+  youtubeUrl?: string;
+  youtubeVisibility?: string;
+  youtubeVisibilityDowngraded?: boolean;
 }
 
 export interface ApiKeyEntry {

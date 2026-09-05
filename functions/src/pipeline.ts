@@ -34,7 +34,7 @@ async function getUserApiKeyRef(userId: string, serviceId: string): Promise<stri
   return ref;
 }
 
-async function getSecretValue(userId: string, serviceId: string): Promise<string> {
+export async function getSecretValue(userId: string, serviceId: string): Promise<string> {
   const secretRef = await getUserApiKeyRef(userId, serviceId);
   const [version] = await getSecretManager().accessSecretVersion({ name: `${secretRef}/versions/latest` });
   const payload = version.payload?.data;
@@ -144,7 +144,7 @@ function buildBreakdownTool() {
   };
 }
 
-function projectPath(userId: string, projectId: string) {
+export function projectPath(userId: string, projectId: string) {
   return db.collection('users').doc(userId).collection('projects').doc(projectId);
 }
 
@@ -152,7 +152,7 @@ function scenePath(userId: string, projectId: string, sceneId: string) {
   return projectPath(userId, projectId).collection('scenes').doc(sceneId);
 }
 
-async function withProjectError(
+export async function withProjectError(
   userId: string,
   projectId: string,
   error: unknown
@@ -178,7 +178,7 @@ async function withSceneError(
   });
 }
 
-async function logUsage(
+export async function logUsage(
   userId: string,
   projectId: string,
   entry: {
@@ -261,7 +261,7 @@ async function executeSceneOperation<T>(
   throw lastError;
 }
 
-async function sendPushToUser(userId: string, title: string, body: string, data: Record<string, string>): Promise<void> {
+export async function sendPushToUser(userId: string, title: string, body: string, data: Record<string, string>): Promise<void> {
   const tokensSnap = await db.collection('users').doc(userId).collection('fcmTokens').get();
   if (tokensSnap.empty) return;
 

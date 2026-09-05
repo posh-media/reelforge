@@ -25,6 +25,7 @@ const SERVICE_NAMES: Record<string, string> = {
   elevenlabs: 'ElevenLabs',
   falai: 'fal.ai',
   synclabs: 'Sync Labs',
+  youtube: 'YouTube',
 };
 
 function getProjectId(): string {
@@ -170,3 +171,4 @@ export const deleteApiKey = secretsManager.https.onCall(async (data, context) =>
 });
 
 export * from './pipeline';
+export * from './youtube';
