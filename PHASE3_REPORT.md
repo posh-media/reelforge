@@ -160,72 +160,27 @@ Key modified files:
 
 ---
 
-## Pending / manual steps to complete Phase 3
+## Phase 3B follow-up status (2026-09-05)
 
-### 1. Deploy the Cloud Run stitch service
+| Item | Status |
+|------|--------|
+| Cloud Run stitch deploy via GitHub Actions | **Implemented** — `.github/workflows/deploy-stitch-service.yml` builds/pushes the image, deploys `stitch-service`, grants `roles/run.invoker`, writes `functions/.env`, and redeploys functions. Requires repo secrets `GCP_SA_KEY` and `FIREBASE_TOKEN`. |
+| FCM push notifications | **Implemented** — `expo-notifications` + `src/services/notifications.ts` + `RootNavigator` deep-linking. Android FCM tokens are stored; Expo Go fallback uses Expo push tokens. iOS deferred to an EAS build. |
+| Transient/permanent retry | **Implemented** — `isTransientError` + `executeSceneOperation` adds one-time auto-retry with 5s backoff in `doGenerateSceneVoice`, `doGenerateSceneVideo`, `doGenerateSceneLipsync`. |
+| Stitched video player | **Implemented** — `expo-av` `Video` component in `ProjectDetailScreen` plays `project.finalVideoUrl` via a resolved download URL. |
+| Live E2E / screenshots | **Blocked** — the Cloud Run service must be deployed first (workflow ready). Once it is live and `STITCH_SERVICE_URL` is set, the full chain and screenshots can be captured. |
 
-`gcloud` and `docker` are not available in this environment. Run the following from the repo root on a machine with the Cloud SDK:
+## Live verification checklist (for the next session)
 
-```bash
-gcloud builds submit --tag gcr.io/reelforge-4b07d/stitch-service cloud-run/stitch-service
-
-gcloud run deploy stitch-service \
-  --image gcr.io/reelforge-4b07d/stitch-service \
-  --region us-central1 \
-  --service-account reelforge-pipeline@reelforge-4b07d.iam.gserviceaccount.com \
-  --set-env-vars STORAGE_BUCKET=reelforge-4b07d.appspot.com \
-  --no-allow-unauthenticated
-
-gcloud run services add-iam-policy-binding stitch-service \
-  --region us-central1 \
-  --member serviceAccount:reelforge-pipeline@reelforge-4b07d.iam.gserviceaccount.com \
-  --role roles/run.invoker
-```
-
-Then create `functions/.env`:
-
-```
-STITCH_SERVICE_URL=https://<stitch-service-url>/stitch
-```
-
-and re-deploy functions:
-
-```bash
-cd functions && npm run deploy
-```
-
-### 2. FCM push notifications
-
-The scaffolding for push notifications is deferred:
-
-- Add `expo-notifications` and `expo-av` (for final video preview).
-- Request permission when a project first enters `processing`.
-- Store the device token in `users/{uid}/fcmTokens/{token}`.
-- Send notifications from `onSceneUpdated` (all scenes `lipsync_ready`) and from `stitchProject` completion (project-level `pending_review`).
-- Add `expo-notifications` response listener in the navigator to deep-link to `ProjectDetail`.
-
-Android FCM is the immediate target; iOS/APNs requires an EAS custom build with `GoogleService-Info.plist`.
-
-### 3. Robust automatic retry
-
-`retryCount` is already persisted and reset by `regenerateScene`. The remaining work is to add `isTransientError()` classification and one-time backoff retries inside `doGenerateSceneVoice`, `doGenerateSceneVideo`, and `doGenerateSceneLipsync`.
-
-### 4. Final stitched video player
-
-`ProjectDetailScreen` currently shows the stitched-video preview as a placeholder. Replace it with a real player (`expo-av` `Video` for native, `<video>` for web) once `project.finalVideoUrl` exists.
-
-### 5. Live acceptance and screenshots
-
-With real API keys saved in Settings:
-
-1. Create a `single_story` project.
-2. Verify Claude → ElevenLabs voice assignment → fal.ai video → Sync lip-sync chain.
-3. Approve all scenes and click **Approve All & Stitch**.
-4. Confirm the project reaches `pending_review` with `finalVideoUrl` populated.
-5. Test final Approve/Reject.
-6. Trigger a forced provider failure and confirm `lastError` + manual **Regenerate**.
-7. Confirm `estimatedCostUsd` and `usageLogs` entries.
-8. Capture screenshots of the Scene Breakdown voice picker, the scene-by-scene character/voice modal, and the project-level `pending_review` view.
+1. Push `main` and ensure repo secrets `GCP_SA_KEY` and `FIREBASE_TOKEN` are set so the `deploy-stitch-service` workflow runs.
+2. Save the four provider keys in Settings.
+3. Create a **short** `single_story` project (1–2 scenes, each under 20s).
+4. Assign ElevenLabs voices, approve the breakdown, and watch `script_ready` → `voice_ready` → `video_ready` → `lipsync_ready`.
+5. Approve each scene and click **Approve All & Stitch**.
+6. Confirm `project.status === 'pending_review'`, `finalVideoUrl` is populated, and the player plays.
+7. Confirm `usageLogs` entries and the `Estimated cost so far` total.
+8. Trigger a forced provider failure (e.g. bad `falai` key) and confirm `lastError` + manual **Regenerate**.
+9. Take screenshots of the Scene Breakdown voice picker, the scene-by-scene character/voice modal, the `pending_review` final review, and the cost display.
 
 ---
 
@@ -233,5 +188,6 @@ With real API keys saved in Settings:
 
 - `functions/package.json` now pins `@anthropic-ai/sdk ^0.124.0`, `zod ^4.5.4`, `express ^5.2.1`, and `google-auth-library ^11.0.2`. All build and deploy cleanly.
 - `music-metadata` is still used for audio duration. If any provider output format proves incompatible, it should be replaced or the fallback byte-estimate can be made the primary method.
-- The `pollFalQueue` interval changed from 1 minute to 2 minutes because Google Cloud Scheduler does not support sub-minute schedules.
+- `pollFalQueue` runs every 2 minutes and `pollSyncLabs` every 2 minutes; both enforce a hard timeout (20 min / 30 min respectively).
 - All provider webhook endpoints are public HTTP functions protected by signature verification; no API keys are transmitted in query strings or headers accessible to the client.
+- Push notifications use `expo-notifications`; in Expo Go they are Expo push tokens, and in a standalone Android build they will be native FCM tokens. The `sendPushToUser` helper handles both.
